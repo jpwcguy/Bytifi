@@ -90,7 +90,7 @@ Bytifi uses two different values — don't swap them:
 
 | Name | Upload JSON field | Example location |
 |------|-------------------|------------------|
-| **Link ID** | `token` | `/f/QeVuslvdaP-okMxG`, `link?link=QeVuslvdaP-okMxG` |
+| **Link ID** | `link` | `/f/QeVuslvdaP-okMxG`, `link?link=QeVuslvdaP-okMxG` |
 | **Encryption token** | `encryptionToken` | `#token=2LTlmBrDkO4GJg0...` in `shareUrl` |
 
 - `--link` = link ID (short, ~16 chars)
@@ -133,7 +133,7 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 | Flag | Description |
 |------|-------------|
 | `--token` | Encryption key from `#token=...` (`encryptionToken` in upload JSON) |
-| `--link` | Link ID from upload JSON `token` field (`/f/TOKEN`) |
+| `--link` | Link ID from upload JSON `link` field (`/f/LINK_ID`) |
 | `--upload-json` | Upload `--json` output file (recommended for downloaded files) |
 | `--meta` | Saved `clientEncryptionMeta` JSON for offline decrypt |
 | `--share-url` | Share URL to read token/metadata while decrypting a local file |
@@ -146,9 +146,9 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 
 Exit codes: `0` success, `1` usage error, `2` API error, `3` network error.
 
-JSON output (`--json`) for upload includes `shareUrl`, `encryptedFile`, `encryptionToken`, `clientEncryptionMeta`, `expiresAt`, and `token`.
+JSON output (`--json`) for upload includes `shareUrl`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, and `expiresAt`.
 
-JSON output for decrypt includes `outputPath`, `originalName`, `size`, `mimeType`, `expiresAt`, `linkToken`, `storageMode`, and `sourcePath` (for local decrypt).
+JSON output for decrypt includes `outputPath`, `originalName`, `size`, `mimeType`, `expiresAt`, `link`, `storageMode`, and `sourcePath` (for local decrypt).
 
 Files over ~100 MB encrypted use multipart upload automatically. Progress prints to stderr unless `--json` or `--quiet` is set.
 
