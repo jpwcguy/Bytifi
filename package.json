@@ -40,8 +40,5 @@
   "devDependencies": {
     "@yao-pkg/pkg": "^6.21.0",
     "esbuild": "^0.25.0"
-  },
-  "dependencies": {
-    "bytifi": "^0.1.1"
   }
 }

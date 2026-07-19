@@ -3,28 +3,48 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+import { createRequire } from 'node:module'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
+const require = createRequire(import.meta.url)
+const { version } = require('../package.json')
+
 function printHelp() {
-  process.stdout.write(`Bytifi CLI — encrypt and upload files
+  process.stdout.write(`Bytifi CLI v${version} — encrypt and upload files
 
 Usage:
   bytifi upload <file> [options]
 
 Options:
-  -k, --api-key <key>     API key (default: BYTIFI_API_KEY env var)
-  -e, --expires <minutes> Link lifetime: 5|15|30|60|120 (default: 30)
+  -k, --api-key <key>       API key (default: BYTIFI_API_KEY env var)
+  -e, --expires <minutes>   Link lifetime: 5|15|30|60|120 (default: 30)
       --delete-on-download  Remove file after first download
       --json                Print machine-readable JSON to stdout
   -q, --quiet               Print only the share URL
+      --verbose             Show API error details on stderr
       --mime-type <type>    Override detected MIME type
       --base-url <url>      API base URL (default: https://bytifi.com)
+  -V, --version             Show version
   -h, --help                Show this help
+
+Exit codes:
+  0  success
+  1  usage or validation error
+  2  API error (4xx/5xx response)
+  3  network error
 
 Examples:
   bytifi upload ./photo.png
   BYTIFI_API_KEY=usk_... bytifi upload report.pdf --expires 60 --json
 `)
+}
+
+function readFlagValue(argv, index, flagName) {
+  const value = argv[index + 1]
+  if (!value || value.startsWith('-')) {
+    throw new Error(`Option ${flagName} requires a value.`)
+  }
+  return value
 }
 
 function parseArgs(argv) {
@@ -35,9 +55,11 @@ function parseArgs(argv) {
     deleteOnDownload: false,
     json: false,
     quiet: false,
+    verbose: false,
     mimeType: '',
     baseUrl: 'https://bytifi.com',
     help: false,
+    version: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,6 +67,11 @@ function parseArgs(argv) {
 
     if (arg === '--help' || arg === '-h') {
       options.help = true
+      continue
+    }
+
+    if (arg === '--version' || arg === '-V') {
+      options.version = true
       continue
     }
 
@@ -58,31 +85,41 @@ function parseArgs(argv) {
       continue
     }
 
+    if (arg === '--verbose') {
+      options.verbose = true
+      continue
+    }
+
     if (arg === '--delete-on-download') {
       options.deleteOnDownload = true
       continue
     }
 
     if (arg === '--api-key' || arg === '-k') {
-      options.apiKey = argv[index + 1] || ''
+      options.apiKey = readFlagValue(argv, index, arg)
       index += 1
       continue
     }
 
     if (arg === '--expires' || arg === '-e') {
-      options.expiresInMinutes = Number(argv[index + 1])
+      const raw = readFlagValue(argv, index, arg)
+      const minutes = Number(raw)
+      if (!Number.isFinite(minutes)) {
+        throw new Error(`Invalid expires value: ${raw}`)
+      }
+      options.expiresInMinutes = minutes
       index += 1
       continue
     }
 
     if (arg === '--mime-type') {
-      options.mimeType = argv[index + 1] || ''
+      options.mimeType = readFlagValue(argv, index, arg)
       index += 1
       continue
     }
 
     if (arg === '--base-url') {
-      options.baseUrl = argv[index + 1] || options.baseUrl
+      options.baseUrl = readFlagValue(argv, index, arg)
       index += 1
       continue
     }
@@ -104,6 +141,14 @@ function validateExpires(minutes) {
   }
 }
 
+function writeProgress(percent) {
+  process.stderr.write(`\rEncrypting and uploading: ${percent}%`)
+}
+
+function clearProgressLine() {
+  process.stderr.write('\r\x1b[K')
+}
+
 async function runUpload(filePath, options) {
   validateExpires(options.expiresInMinutes)
 
@@ -112,34 +157,64 @@ async function runUpload(filePath, options) {
   }
 
   const resolvedPath = path.resolve(filePath)
-  await fs.access(resolvedPath)
 
-  const result = await uploadFile(resolvedPath, {
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-    expiresInMinutes: options.expiresInMinutes,
-    deleteOnDownload: options.deleteOnDownload,
-    mimeType: options.mimeType || undefined,
-    onProgress: options.quiet || options.json
-      ? undefined
-      : (percent) => {
-          process.stderr.write(`Encrypting and uploading: ${percent}%\n`)
-        },
-  })
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
-    return
+  try {
+    await fs.access(resolvedPath)
+  } catch {
+    throw new Error(`File not found or not readable: ${resolvedPath}`)
   }
 
-  if (options.quiet) {
-    process.stdout.write(`${result.shareUrl}\n`)
-    return
+  const abortController = new AbortController()
+
+  const handleSignal = () => {
+    abortController.abort()
   }
 
-  process.stdout.write(`Share URL:\n${result.shareUrl}\n`)
-  process.stdout.write(`Download URL:\n${result.downloadUrl}\n`)
-  process.stdout.write(`Expires: ${result.expiresAt}\n`)
+  process.on('SIGINT', handleSignal)
+  process.on('SIGTERM', handleSignal)
+
+  const showProgress = !options.quiet && !options.json
+  let lastPercent = -1
+
+  try {
+    const result = await uploadFile(resolvedPath, {
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      expiresInMinutes: options.expiresInMinutes,
+      deleteOnDownload: options.deleteOnDownload,
+      mimeType: options.mimeType || undefined,
+      signal: abortController.signal,
+      onProgress: showProgress
+        ? (percent) => {
+            if (percent !== lastPercent) {
+              lastPercent = percent
+              writeProgress(percent)
+            }
+          }
+        : undefined,
+    })
+
+    if (showProgress) {
+      clearProgressLine()
+    }
+
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+      return
+    }
+
+    if (options.quiet) {
+      process.stdout.write(`${result.shareUrl}\n`)
+      return
+    }
+
+    process.stdout.write(`Share URL:\n${result.shareUrl}\n`)
+    process.stdout.write(`Download URL:\n${result.downloadUrl}\n`)
+    process.stdout.write(`Expires: ${result.expiresAt}\n`)
+  } finally {
+    process.off('SIGINT', handleSignal)
+    process.off('SIGTERM', handleSignal)
+  }
 }
 
 function exitCodeForError(error) {
@@ -148,11 +223,35 @@ function exitCodeForError(error) {
   return 1
 }
 
+function printError(error, verbose) {
+  process.stderr.write(`${error.message || 'Upload failed.'}\n`)
+
+  if (!verbose) return
+
+  if (error instanceof BytifiApiError) {
+    if (error.status) {
+      process.stderr.write(`HTTP ${error.status}\n`)
+    }
+    if (error.body) {
+      process.stderr.write(`${JSON.stringify(error.body, null, 2)}\n`)
+    }
+  }
+
+  if (error instanceof BytifiNetworkError && error.cause) {
+    process.stderr.write(`${error.cause}\n`)
+  }
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2)
 
   if (!command || command === '--help' || command === '-h') {
     printHelp()
+    process.exit(0)
+  }
+
+  if (command === '--version' || command === '-V') {
+    process.stdout.write(`${version}\n`)
     process.exit(0)
   }
 
@@ -172,15 +271,30 @@ async function main() {
     process.exit(0)
   }
 
+  if (options.version) {
+    process.stdout.write(`${version}\n`)
+    process.exit(0)
+  }
+
+  if (options.json && options.quiet) {
+    throw new Error('Use either --json or --quiet, not both.')
+  }
+
   const filePath = positional[0]
   if (!filePath) {
     throw new Error('Missing file path. Usage: bytifi upload <file>')
+  }
+
+  if (positional.length > 1) {
+    process.stderr.write(`Warning: ignoring extra files: ${positional.slice(1).join(', ')}\n`)
   }
 
   await runUpload(filePath, options)
 }
 
 main().catch((error) => {
-  process.stderr.write(`${error.message || 'Upload failed.'}\n`)
+  clearProgressLine()
+  const verbose = process.argv.includes('--verbose')
+  printError(error, verbose)
   process.exit(exitCodeForError(error))
 })
