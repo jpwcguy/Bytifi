@@ -29,9 +29,10 @@ Upload options:
       --base-url <url>      API base URL (default: https://bytifi.com)
 
 Decrypt options:
-      --token <token>       Encryption token (if not in URL #token=...)
-      --link <token>        Link token for metadata (local encrypted files)
-      --meta <path>         Saved clientEncryptionMeta JSON (offline local decrypt)
+      --token <token>       Encryption key from #token=... (not the link ID)
+      --link <token>        Link ID from upload JSON "token" field (/f/TOKEN)
+      --upload-json <path>  Upload --json output (easiest for downloaded files)
+      --meta <path>         Saved clientEncryptionMeta JSON (offline decrypt)
       --share-url <url>     Share URL for token/metadata when decrypting a local file
   -o, --output <path>       Output file path (default: original filename)
       --output-dir <dir>    Directory for decrypted file (default: cwd)
@@ -52,12 +53,14 @@ Exit codes:
 
 Examples:
   bytifi upload ./photo.png
-  BYTIFI_API_KEY=usk_... bytifi upload report.pdf --expires 60 --json
-  bytifi decrypt 'https://bytifi.com/link?link=abc123#token=...'
-  bytifi decrypt abc123 --token '...' -o ./report.pdf
-  bytifi decrypt ./downloaded.encrypted --link abc123 --token '...'
-  bytifi decrypt ./downloaded.encrypted --meta ./upload-meta.json --token '...'
-  bytifi decrypt ./parts/ --link abc123 --token '...'
+  bytifi upload ./video.mp4 --expires 60 --json > upload.json
+  bytifi upload ./large.iso -q
+
+  bytifi decrypt 'https://bytifi.com/link?link=abc#token=...'
+  bytifi decrypt abc --token 'ENCRYPTION_TOKEN' -o ./restored.mp4
+
+  bytifi decrypt ./downloaded.encrypted --upload-json upload.json
+  bytifi decrypt "./my file(1).mp4" --link abc --token 'ENCRYPTION_TOKEN'
 `)
 }
 
@@ -162,6 +165,7 @@ function parseDecryptArgs(argv) {
     encryptionToken: '',
     linkToken: '',
     metaPath: '',
+    uploadJsonPath: '',
     shareUrl: '',
     output: '',
     outputDirectory: '',
@@ -215,6 +219,12 @@ function parseDecryptArgs(argv) {
 
     if (arg === '--meta') {
       options.metaPath = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--upload-json') {
+      options.uploadJsonPath = readFlagValue(argv, index, arg)
       index += 1
       continue
     }
@@ -354,6 +364,7 @@ async function runDecrypt(input, options) {
       encryptionToken: options.encryptionToken,
       linkToken: options.linkToken,
       metaPath: options.metaPath,
+      uploadJsonPath: options.uploadJsonPath,
       shareUrl: options.shareUrl,
       output: options.output || undefined,
       outputDirectory: options.outputDirectory || undefined,
@@ -458,7 +469,9 @@ async function main() {
     }
 
     if (positional.length > 1) {
-      process.stderr.write(`Warning: ignoring extra files: ${positional.slice(1).join(', ')}\n`)
+      throw new Error(
+        `Upload accepts one file at a time (got ${positional.length}). Quote paths with spaces and avoid shell globs like **.`,
+      )
     }
 
     await runUpload(filePath, options)

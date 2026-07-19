@@ -53,45 +53,57 @@ Prefer the environment variable — keys on the command line can appear in shell
 
 ```bash
 bytifi upload ./photo.png
-bytifi upload ./photo.png --api-key usk_your_api_key_here
-bytifi upload ./photo.png --expires 60 --json
-bytifi upload ./large.iso -q
+bytifi upload "./my video (1).mp4"
+bytifi upload ./report.pdf --expires 60 --delete-on-download
+bytifi upload ./large.iso --json > upload.json
+bytifi upload ./photo.png -q
 ```
 
-### Decrypt
+Upload accepts **one file at a time**. Quote paths that contain spaces. Avoid shell globs like `**` — your shell may expand them into dozens of paths.
 
-Download and decrypt a shared file locally, or decrypt a file you already downloaded from `/f/...`. No API key required.
+### Decrypt from a link
+
+Download and decrypt directly from a share URL or link token. No API key required.
 
 ```bash
-# From share URL (downloads + decrypts)
-bytifi decrypt 'https://bytifi.com/link?link=TOKEN#token=ENCRYPTION_TOKEN'
-bytifi decrypt TOKEN --token ENCRYPTION_TOKEN -o ./restored-file.pdf
-
-# From a downloaded encrypted file
-bytifi decrypt ./downloaded.encrypted --link TOKEN --token ENCRYPTION_TOKEN
-bytifi decrypt ./downloaded.encrypted --meta ./upload-meta.json --token ENCRYPTION_TOKEN
-bytifi decrypt ./parts/ --link TOKEN --token ENCRYPTION_TOKEN
+bytifi decrypt 'https://bytifi.com/link?link=LINK_ID#token=ENCRYPTION_TOKEN'
+bytifi decrypt LINK_ID --token ENCRYPTION_TOKEN -o ./restored.mp4
 ```
 
-Use the full share URL (with `#token=...`) when possible. For `/f/...` downloads, pass the encryption token with `--token` and either `--link` (fetches metadata from the API) or `--meta` (saved `clientEncryptionMeta` JSON from upload `--json` output).
+### Decrypt a downloaded encrypted file
 
-#### Offline decrypt workflow
-
-Save metadata when you upload, so you can decrypt a downloaded `/f/...` file even after the link expires:
+If you already downloaded the encrypted blob from `/f/LINK_ID` (browser, curl, etc.):
 
 ```bash
-# 1. Upload and save the JSON output
+# Easiest — use the upload JSON from when you uploaded
+bytifi decrypt ./downloaded-file --upload-json upload.json
+
+# Or pass both values manually
+bytifi decrypt "./my video (1).mp4" \
+  --link LINK_ID \
+  --token ENCRYPTION_TOKEN
+```
+
+#### Link ID vs encryption token
+
+Bytifi uses two different values — don't swap them:
+
+| Name | Upload JSON field | Example location |
+|------|-------------------|------------------|
+| **Link ID** | `token` | `/f/QeVuslvdaP-okMxG`, `link?link=QeVuslvdaP-okMxG` |
+| **Encryption token** | `encryptionToken` | `#token=2LTlmBrDkO4GJg0...` in `shareUrl` |
+
+- `--link` = link ID (short, ~16 chars)
+- `--token` = encryption key (long, ~43 chars)
+
+### Offline decrypt workflow
+
+Save metadata when you upload, so you can decrypt after the link expires:
+
+```bash
 bytifi upload ./report.pdf --json > upload.json
-
-# 2. Download the encrypted file manually (browser, curl, etc.)
 curl -L "$(jq -r .encryptedFile upload.json)" -o report.encrypted
-
-# 3. Save metadata and decrypt locally (no API call needed)
-jq -c .clientEncryptionMeta upload.json > report.meta.json
-bytifi decrypt ./report.encrypted \
-  --meta ./report.meta.json \
-  --token "$(jq -r .encryptionToken upload.json)" \
-  -o ./report.pdf
+bytifi decrypt ./report.encrypted --upload-json upload.json -o ./report.pdf
 ```
 
 Without a global install:
@@ -120,9 +132,10 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 
 | Flag | Description |
 |------|-------------|
-| `--token` | Encryption token (required if not in URL `#token=...`) |
-| `--link` | Link token for metadata when decrypting a local encrypted file |
-| `--meta` | Saved `clientEncryptionMeta` JSON for offline local decrypt |
+| `--token` | Encryption key from `#token=...` (`encryptionToken` in upload JSON) |
+| `--link` | Link ID from upload JSON `token` field (`/f/TOKEN`) |
+| `--upload-json` | Upload `--json` output file (recommended for downloaded files) |
+| `--meta` | Saved `clientEncryptionMeta` JSON for offline decrypt |
 | `--share-url` | Share URL to read token/metadata while decrypting a local file |
 | `-o, --output` | Output file path |
 | `--output-dir` | Output directory when saving under the original filename |
@@ -149,13 +162,13 @@ Files over ~100 MB encrypted use multipart upload automatically. Progress prints
 
 **Decrypt**
 
-1. Reads link metadata from `/api/link/:token`, or from a saved `--meta` JSON file
-2. Downloads the encrypted file (single blob or per-part for large uploads), unless you pass a local encrypted file
+1. Reads link metadata from `/api/link/:token`, from `--upload-json`, or from `--meta`
+2. Downloads the encrypted file (unless you pass a local encrypted file)
 3. Decrypts locally and writes the original file to disk
 
 ## Development
 
 ```bash
-node bin/bytifi.js upload ./file.png --json
-node bin/bytifi.js decrypt ./file.encrypted --meta ./meta.json --token '...'
+node bin/bytifi.js upload ./file.png --json > upload.json
+node bin/bytifi.js decrypt ./file.encrypted --upload-json upload.json
 ```
