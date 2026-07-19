@@ -30,7 +30,7 @@ Upload options:
 
 Decrypt options:
       --token <token>       Encryption key from #token=... (not the link ID)
-      --link <token>        Link ID from upload JSON "token" field (/f/TOKEN)
+      --link <id>           Link ID from upload JSON "link" field (/f/LINK_ID)
       --upload-json <path>  Upload --json output (easiest for downloaded files)
       --meta <path>         Saved clientEncryptionMeta JSON (offline decrypt)
       --share-url <url>     Share URL for token/metadata when decrypting a local file
