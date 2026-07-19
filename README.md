@@ -22,8 +22,6 @@ npm link
 
 ### Windows (WinGet)
 
-Standalone `.exe` — no Node required:
-
 ```powershell
 winget install Bytifi.Bytifi
 ```
@@ -92,14 +90,8 @@ Files over ~100 MB encrypted use multipart upload automatically. Progress prints
 2. Uploads encrypted bytes via the public API (parallel part uploads for large files)
 3. Prints a share URL including `#token=...`
 
-The server never receives plaintext or the decryption token.
-
 ## Development
 
 ```bash
 node bin/bytifi.js upload ./file.png --json
 ```
-
-## Status
-
-WIP — v0.1.1 direct + multipart upload supported.
