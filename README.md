@@ -1,0 +1,86 @@
+# Bytifi CLI
+
+Official command-line tool for encrypting and uploading files to [Bytifi](https://bytifi.com).
+
+## Install
+
+### npm (all platforms)
+
+```bash
+npm install -g bytifi
+```
+
+Requires **Node.js 18+**.
+
+Or from source:
+
+```bash
+git clone https://github.com/jpwcguy/Bytifi.git
+cd Bytifi
+npm link
+```
+
+### Windows (WinGet)
+
+Standalone `.exe` — no Node required:
+
+```powershell
+winget install Bytifi.Bytifi
+```
+
+Or download [bytifi.exe from GitHub Releases](https://github.com/jpwcguy/Bytifi/releases/latest).
+
+## Setup
+
+```bash
+export BYTIFI_API_KEY=usk_your_api_key_here
+```
+
+Create an API key in **Account → API** on bytifi.com.
+
+## Usage
+
+```bash
+bytifi upload ./photo.png
+bytifi upload ./photo.png --api-key usk_your_api_key_here
+bytifi upload ./photo.png --expires 60 --json
+bytifi upload ./large.iso -q
+```
+
+Without a global install:
+
+```bash
+npx bytifi upload ./photo.png --api-key usk_your_api_key_here
+npm exec bytifi -- upload ./photo.png --api-key usk_your_api_key_here
+```
+
+Note: with `npm exec`, put `--` before the file path so npm does not swallow `--api-key`.
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-k, --api-key` | API key (default: `BYTIFI_API_KEY`) |
+| `-e, --expires` | Link lifetime in minutes: `5`, `15`, `30`, `60`, `120` |
+| `--delete-on-download` | Delete after first download |
+| `--json` | Machine-readable JSON output |
+| `-q, --quiet` | Print only the share URL |
+| `--mime-type` | Override MIME type detection |
+
+## How it works
+
+1. Encrypts the file locally with AES-GCM (same format as the website)
+2. Uploads encrypted bytes via the public API
+3. Prints a share URL including `#token=...`
+
+The server never receives plaintext or the decryption token.
+
+## Development
+
+```bash
+node bin/bytifi.js upload ./file.png --json
+```
+
+## Status
+
+WIP — v0.1.1 direct + multipart upload supported.
