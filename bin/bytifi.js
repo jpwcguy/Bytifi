@@ -4,18 +4,21 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
+import { decryptFile } from '../lib/decrypt.js'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../package.json')
 
 function printHelp() {
-  process.stdout.write(`Bytifi CLI v${version} — encrypt and upload files
+  process.stdout.write(`Bytifi CLI v${version} — encrypt, upload, and decrypt files
 
 Usage:
   bytifi upload <file> [options]
+  bytifi decrypt <url-or-token> [options]
+  bytifi decrypt <encrypted-file> [options]
 
-Options:
+Upload options:
   -k, --api-key <key>       API key (default: BYTIFI_API_KEY env var)
   -e, --expires <minutes>   Link lifetime: 5|15|30|60|120 (default: 30)
       --delete-on-download  Remove file after first download
@@ -24,6 +27,20 @@ Options:
       --verbose             Show API error details on stderr
       --mime-type <type>    Override detected MIME type
       --base-url <url>      API base URL (default: https://bytifi.com)
+
+Decrypt options:
+      --token <token>       Encryption token (if not in URL #token=...)
+      --link <token>        Link token for metadata (local encrypted files)
+      --meta <path>         Saved clientEncryptionMeta JSON (offline local decrypt)
+      --share-url <url>     Share URL for token/metadata when decrypting a local file
+  -o, --output <path>       Output file path (default: original filename)
+      --output-dir <dir>    Directory for decrypted file (default: cwd)
+      --json                Print machine-readable JSON to stdout
+  -q, --quiet               Print only the output file path
+      --verbose             Show error details on stderr
+      --base-url <url>      API base URL (default: https://bytifi.com)
+
+Global:
   -V, --version             Show version
   -h, --help                Show this help
 
@@ -36,6 +53,11 @@ Exit codes:
 Examples:
   bytifi upload ./photo.png
   BYTIFI_API_KEY=usk_... bytifi upload report.pdf --expires 60 --json
+  bytifi decrypt 'https://bytifi.com/link?link=abc123#token=...'
+  bytifi decrypt abc123 --token '...' -o ./report.pdf
+  bytifi decrypt ./downloaded.encrypted --link abc123 --token '...'
+  bytifi decrypt ./downloaded.encrypted --meta ./upload-meta.json --token '...'
+  bytifi decrypt ./parts/ --link abc123 --token '...'
 `)
 }
 
@@ -47,7 +69,7 @@ function readFlagValue(argv, index, flagName) {
   return value
 }
 
-function parseArgs(argv) {
+function parseUploadArgs(argv) {
   const positional = []
   const options = {
     apiKey: process.env.BYTIFI_API_KEY || '',
@@ -134,6 +156,103 @@ function parseArgs(argv) {
   return { positional, options }
 }
 
+function parseDecryptArgs(argv) {
+  const positional = []
+  const options = {
+    encryptionToken: '',
+    linkToken: '',
+    metaPath: '',
+    shareUrl: '',
+    output: '',
+    outputDirectory: '',
+    json: false,
+    quiet: false,
+    verbose: false,
+    baseUrl: 'https://bytifi.com',
+    help: false,
+    version: false,
+  }
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+
+    if (arg === '--help' || arg === '-h') {
+      options.help = true
+      continue
+    }
+
+    if (arg === '--version' || arg === '-V') {
+      options.version = true
+      continue
+    }
+
+    if (arg === '--json') {
+      options.json = true
+      continue
+    }
+
+    if (arg === '--quiet' || arg === '-q') {
+      options.quiet = true
+      continue
+    }
+
+    if (arg === '--verbose') {
+      options.verbose = true
+      continue
+    }
+
+    if (arg === '--token') {
+      options.encryptionToken = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--link') {
+      options.linkToken = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--meta') {
+      options.metaPath = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--share-url') {
+      options.shareUrl = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--output' || arg === '-o') {
+      options.output = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--output-dir') {
+      options.outputDirectory = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--base-url') {
+      options.baseUrl = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`)
+    }
+
+    positional.push(arg)
+  }
+
+  return { positional, options }
+}
+
 function validateExpires(minutes) {
   const allowed = new Set([5, 15, 30, 60, 120])
   if (!allowed.has(minutes)) {
@@ -141,8 +260,8 @@ function validateExpires(minutes) {
   }
 }
 
-function writeProgress(percent) {
-  process.stderr.write(`\rEncrypting and uploading: ${percent}%`)
+function writeProgress(label, percent) {
+  process.stderr.write(`\r${label}: ${percent}%`)
 }
 
 function clearProgressLine() {
@@ -188,7 +307,7 @@ async function runUpload(filePath, options) {
         ? (percent) => {
             if (percent !== lastPercent) {
               lastPercent = percent
-              writeProgress(percent)
+              writeProgress('Encrypting and uploading', percent)
             }
           }
         : undefined,
@@ -209,7 +328,63 @@ async function runUpload(filePath, options) {
     }
 
     process.stdout.write(`Share URL:\n${result.shareUrl}\n`)
-    process.stdout.write(`Download URL:\n${result.downloadUrl}\n`)
+    process.stdout.write(`Encrypted file:\n${result.encryptedFile}\n`)
+    process.stdout.write(`Expires: ${result.expiresAt}\n`)
+  } finally {
+    process.off('SIGINT', handleSignal)
+    process.off('SIGTERM', handleSignal)
+  }
+}
+
+async function runDecrypt(input, options) {
+  const abortController = new AbortController()
+
+  const handleSignal = () => {
+    abortController.abort()
+  }
+
+  process.on('SIGINT', handleSignal)
+  process.on('SIGTERM', handleSignal)
+
+  const showProgress = !options.quiet && !options.json
+  let lastPercent = -1
+
+  try {
+    const result = await decryptFile(input, {
+      encryptionToken: options.encryptionToken,
+      linkToken: options.linkToken,
+      metaPath: options.metaPath,
+      shareUrl: options.shareUrl,
+      output: options.output || undefined,
+      outputDirectory: options.outputDirectory || undefined,
+      baseUrl: options.baseUrl,
+      signal: abortController.signal,
+      onProgress: showProgress
+        ? (percent) => {
+            if (percent !== lastPercent) {
+              lastPercent = percent
+              writeProgress('Downloading and decrypting', percent)
+            }
+          }
+        : undefined,
+    })
+
+    if (showProgress) {
+      clearProgressLine()
+    }
+
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+      return
+    }
+
+    if (options.quiet) {
+      process.stdout.write(`${result.outputPath}\n`)
+      return
+    }
+
+    process.stdout.write(`Saved: ${result.outputPath}\n`)
+    process.stdout.write(`Original name: ${result.originalName}\n`)
     process.stdout.write(`Expires: ${result.expiresAt}\n`)
   } finally {
     process.off('SIGINT', handleSignal)
@@ -224,7 +399,7 @@ function exitCodeForError(error) {
 }
 
 function printError(error, verbose) {
-  process.stderr.write(`${error.message || 'Upload failed.'}\n`)
+  process.stderr.write(`${error.message || 'Command failed.'}\n`)
 
   if (!verbose) return
 
@@ -255,41 +430,72 @@ async function main() {
     process.exit(0)
   }
 
-  if (command !== 'upload') {
-    if (command === 'help') {
-      printHelp()
-      process.exit(0)
-    }
-
-    throw new Error(`Unknown command: ${command}`)
-  }
-
-  const { positional, options } = parseArgs(rest)
-
-  if (options.help) {
+  if (command === 'help') {
     printHelp()
     process.exit(0)
   }
 
-  if (options.version) {
-    process.stdout.write(`${version}\n`)
-    process.exit(0)
+  if (command === 'upload') {
+    const { positional, options } = parseUploadArgs(rest)
+
+    if (options.help) {
+      printHelp()
+      process.exit(0)
+    }
+
+    if (options.version) {
+      process.stdout.write(`${version}\n`)
+      process.exit(0)
+    }
+
+    if (options.json && options.quiet) {
+      throw new Error('Use either --json or --quiet, not both.')
+    }
+
+    const filePath = positional[0]
+    if (!filePath) {
+      throw new Error('Missing file path. Usage: bytifi upload <file>')
+    }
+
+    if (positional.length > 1) {
+      process.stderr.write(`Warning: ignoring extra files: ${positional.slice(1).join(', ')}\n`)
+    }
+
+    await runUpload(filePath, options)
+    return
   }
 
-  if (options.json && options.quiet) {
-    throw new Error('Use either --json or --quiet, not both.')
+  if (command === 'decrypt') {
+    const { positional, options } = parseDecryptArgs(rest)
+
+    if (options.help) {
+      printHelp()
+      process.exit(0)
+    }
+
+    if (options.version) {
+      process.stdout.write(`${version}\n`)
+      process.exit(0)
+    }
+
+    if (options.json && options.quiet) {
+      throw new Error('Use either --json or --quiet, not both.')
+    }
+
+    const input = positional[0]
+    if (!input) {
+      throw new Error('Missing input. Usage: bytifi decrypt <url-or-token|encrypted-file>')
+    }
+
+    if (positional.length > 1) {
+      process.stderr.write(`Warning: ignoring extra arguments: ${positional.slice(1).join(', ')}\n`)
+    }
+
+    await runDecrypt(input, options)
+    return
   }
 
-  const filePath = positional[0]
-  if (!filePath) {
-    throw new Error('Missing file path. Usage: bytifi upload <file>')
-  }
-
-  if (positional.length > 1) {
-    process.stderr.write(`Warning: ignoring extra files: ${positional.slice(1).join(', ')}\n`)
-  }
-
-  await runUpload(filePath, options)
+  throw new Error(`Unknown command: ${command}`)
 }
 
 main().catch((error) => {
