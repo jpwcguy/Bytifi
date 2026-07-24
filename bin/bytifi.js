@@ -26,6 +26,8 @@ Upload options:
   -q, --quiet               Print only the share URL
       --verbose             Show API error details on stderr
       --mime-type <type>    Override detected MIME type
+      --compress <mode>     Compression: auto|gzip|off (default: auto)
+      --concurrency <n>     Parallel part workers (default: 4)
       --base-url <url>      API base URL (default: https://bytifi.com)
 
 Decrypt options:
@@ -54,6 +56,7 @@ Exit codes:
 Examples:
   bytifi upload ./photo.png
   bytifi upload ./video.mp4 --expires 60 --json > upload.json
+  bytifi upload ./logs.tar --compress gzip --concurrency 8
   bytifi upload ./large.iso -q
 
   bytifi decrypt 'https://bytifi.com/link?link=abc#token=...'
@@ -82,6 +85,8 @@ function parseUploadArgs(argv) {
     quiet: false,
     verbose: false,
     mimeType: '',
+    compressionMode: 'auto',
+    concurrency: 4,
     baseUrl: 'https://bytifi.com',
     help: false,
     version: false,
@@ -139,6 +144,23 @@ function parseUploadArgs(argv) {
 
     if (arg === '--mime-type') {
       options.mimeType = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--compress') {
+      options.compressionMode = readFlagValue(argv, index, arg)
+      index += 1
+      continue
+    }
+
+    if (arg === '--concurrency') {
+      const raw = readFlagValue(argv, index, arg)
+      const concurrency = Number(raw)
+      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) {
+        throw new Error('concurrency must be an integer between 1 and 16.')
+      }
+      options.concurrency = concurrency
       index += 1
       continue
     }
@@ -312,6 +334,8 @@ async function runUpload(filePath, options) {
       expiresInMinutes: options.expiresInMinutes,
       deleteOnDownload: options.deleteOnDownload,
       mimeType: options.mimeType || undefined,
+      compressionMode: options.compressionMode,
+      concurrency: options.concurrency,
       signal: abortController.signal,
       onProgress: showProgress
         ? (percent) => {

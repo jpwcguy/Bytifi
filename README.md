@@ -55,9 +55,11 @@ Prefer the environment variable — keys on the command line can appear in shell
 bytifi upload ./photo.png
 bytifi upload "./my video (1).mp4"
 bytifi upload ./report.pdf --expires 60 --delete-on-download
-bytifi upload ./large.iso --json > upload.json
+bytifi upload ./logs.txt --compress auto --concurrency 8 --json > upload.json
 bytifi upload ./photo.png -q
 ```
+
+Files over **10 MB** use multipart upload automatically (lower memory use). Compression defaults to **`auto`**: gzip for text-like files, skipped for video/images/zip.
 
 Upload accepts **one file at a time**. Quote paths that contain spaces. Avoid shell globs like `**` — your shell may expand them into dozens of paths.
 
@@ -126,6 +128,8 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 | `-q, --quiet` | Print only the share URL |
 | `--verbose` | Print API error details to stderr |
 | `--mime-type` | Override detected MIME type |
+| `--compress` | Compression mode: `auto`, `gzip`, or `off` (default: `auto`) |
+| `--concurrency` | Parallel encrypt/upload workers, 1–16 (default: `4`) |
 | `--base-url` | API base URL (default: `https://bytifi.com`) |
 
 ### Decrypt options
@@ -146,7 +150,7 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 
 Exit codes: `0` success, `1` usage error, `2` API error, `3` network error.
 
-JSON output (`--json`) for upload includes `shareUrl`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, and `expiresAt`.
+JSON output (`--json`) for upload includes `shareUrl`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, `compression`, and `expiresAt`.
 
 JSON output for decrypt includes `outputPath`, `originalName`, `size`, `mimeType`, `expiresAt`, `link`, `storageMode`, and `sourcePath` (for local decrypt).
 
@@ -156,9 +160,23 @@ Files over ~100 MB encrypted use multipart upload automatically. Progress prints
 
 **Upload**
 
-1. Encrypts the file locally with AES-GCM (same format as the website)
-2. Uploads encrypted bytes via the public API (parallel part uploads for large files)
-3. Prints a share URL including `#token=...`
+1. Optionally gzip-compress each chunk (`--compress auto|gzip|off`)
+2. Encrypts locally with AES-GCM (same format as the website, meta `version: 2` when compressed)
+3. Uploads encrypted bytes via multipart pipeline for files >10 MB
+4. Prints a share URL including `#token=...`
+
+## Compatibility
+
+| Scenario | Works? |
+|----------|--------|
+| Old links (no compression) | Yes — everywhere |
+| New CLI upload + new CLI decrypt | Yes |
+| New CLI upload + **updated website** decrypt | Yes — **deploy Bytifi-Website** after upgrading CLI |
+| New CLI upload + old website (not deployed) | **Broken in browser** — garbled download |
+| New CLI upload + old CLI (≤0.1.5) decrypt | **Broken** — upgrade CLI |
+| Website upload (no compression) | Yes — unchanged |
+
+Compressed files larger than one chunk use **part-based storage**; decrypt via share link or CLI part download.
 
 **Decrypt**
 
