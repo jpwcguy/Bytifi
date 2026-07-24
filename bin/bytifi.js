@@ -26,7 +26,6 @@ Upload options:
   -q, --quiet               Print only the share URL
       --verbose             Show API error details on stderr
       --mime-type <type>    Override detected MIME type
-      --compress <mode>     Compression: auto|gzip|off (default: auto)
       --concurrency <n>     Parallel part workers (default: 4)
       --base-url <url>      API base URL (default: https://bytifi.com)
 
@@ -54,16 +53,16 @@ Exit codes:
   3  network error
 
 Examples:
+  bytifi --version
+  export BYTIFI_API_KEY=usk_your_key
+
   bytifi upload ./photo.png
-  bytifi upload ./video.mp4 --expires 60 --json > upload.json
-  bytifi upload ./logs.tar --compress gzip --concurrency 8
+  bytifi upload "./my report.pdf" --expires 60 --delete-on-download
+  bytifi upload ./logs.txt --concurrency 8 --json > upload.json
   bytifi upload ./large.iso -q
 
-  bytifi decrypt 'https://bytifi.com/link?link=abc#token=...'
-  bytifi decrypt abc --token 'ENCRYPTION_TOKEN' -o ./restored.mp4
-
-  bytifi decrypt ./downloaded.encrypted --upload-json upload.json
-  bytifi decrypt "./my file(1).mp4" --link abc --token 'ENCRYPTION_TOKEN'
+  bytifi decrypt 'https://bytifi.com/link?link=LINK#token=KEY'
+  bytifi decrypt ./downloaded.bin --upload-json upload.json -o ./restored.bin
 `)
 }
 
@@ -85,7 +84,6 @@ function parseUploadArgs(argv) {
     quiet: false,
     verbose: false,
     mimeType: '',
-    compressionMode: 'auto',
     concurrency: 4,
     baseUrl: 'https://bytifi.com',
     help: false,
@@ -144,12 +142,6 @@ function parseUploadArgs(argv) {
 
     if (arg === '--mime-type') {
       options.mimeType = readFlagValue(argv, index, arg)
-      index += 1
-      continue
-    }
-
-    if (arg === '--compress') {
-      options.compressionMode = readFlagValue(argv, index, arg)
       index += 1
       continue
     }
@@ -334,7 +326,6 @@ async function runUpload(filePath, options) {
       expiresInMinutes: options.expiresInMinutes,
       deleteOnDownload: options.deleteOnDownload,
       mimeType: options.mimeType || undefined,
-      compressionMode: options.compressionMode,
       concurrency: options.concurrency,
       signal: abortController.signal,
       onProgress: showProgress
