@@ -155,33 +155,6 @@ JSON output for decrypt includes `outputPath`, `originalName`, `size`, `mimeType
 
 Files over ~100 MB encrypted use multipart upload automatically. Progress prints to stderr unless `--json` or `--quiet` is set.
 
-## How it works
-
-**Upload**
-
-1. Gzip-compresses each chunk, then encrypts locally with AES-GCM (meta `version: 2`)
-2. Uploads encrypted bytes via multipart pipeline for files >10 MB
-3. Prints a share URL including `#token=...`
-
-## Compatibility
-
-| Scenario | Works? |
-|----------|--------|
-| Old links (no compression) | Yes — everywhere |
-| New CLI upload + new CLI decrypt | Yes |
-| New CLI upload + **updated website** decrypt | Yes — **deploy Bytifi-Website** after upgrading CLI |
-| New CLI upload + old website (not deployed) | **Broken in browser** — garbled download |
-| New CLI upload + old CLI (≤0.1.5) decrypt | **Broken** — upgrade CLI |
-| Website upload (no compression) | Yes — unchanged |
-
-Compressed files larger than one chunk use **part-based storage**; decrypt via share link or CLI part download.
-
-**Decrypt**
-
-1. Reads link metadata from `/api/link/:token`, from `--upload-json`, or from `--meta`
-2. Downloads the encrypted file (unless you pass a local encrypted file)
-3. Decrypts locally and writes the original file to disk
-
 ## Development
 
 ```bash
