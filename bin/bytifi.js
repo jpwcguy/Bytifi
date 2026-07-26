@@ -5,7 +5,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
 import { decryptFile } from '../lib/decrypt.js'
-import { formatProgressLine } from '../lib/progress.js'
+import { createProgressTracker, formatProgressLine } from '../lib/progress.js'
+import { validateBaseUrl } from '../lib/url.js'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
 const require = createRequire(import.meta.url)
@@ -14,15 +15,41 @@ const version =
     ? __BYTIFI_VERSION__
     : require('../package.json').version
 
-function printHelp() {
+const SECRET_FLAGS = new Set(['--api-key', '-k', '--token'])
+
+function printGlobalHelp() {
   process.stdout.write(`Bytifi CLI v${version} — encrypt, upload, and decrypt files
 
 Usage:
   bytifi upload <file> [options]
-  bytifi decrypt <url-or-token> [options]
-  bytifi decrypt <encrypted-file> [options]
+  bytifi decrypt <input> [options]
 
-Upload options:
+Commands:
+  upload    Encrypt and upload a file
+  decrypt   Decrypt from a share link or local encrypted file
+
+Global:
+  -V, --version             Show version
+  -h, --help                Show help
+
+Run \`bytifi upload --help\` or \`bytifi decrypt --help\` for command options.
+
+Exit codes:
+  0   success
+  1   usage or validation error
+  2   API error (4xx/5xx response)
+  3   network error
+  130 interrupted (Ctrl+C)
+`)
+}
+
+function printUploadHelp() {
+  process.stdout.write(`Bytifi upload — encrypt and upload a file
+
+Usage:
+  bytifi upload <file> [options]
+
+Options:
   -k, --api-key <key>       API key (default: BYTIFI_API_KEY env var)
   -e, --expires <minutes>   Link lifetime: 5|15|30|60|120 (default: 30)
       --delete-on-download  Remove file after first download
@@ -30,43 +57,49 @@ Upload options:
   -q, --quiet               Print only the share URL
       --verbose             Show API error details on stderr
       --mime-type <type>    Override detected MIME type
-      --concurrency <n>     Parallel part workers (default: 4)
+      --concurrency <n>     Parallel part workers, 1–16 (default: auto)
       --base-url <url>      API base URL (default: https://bytifi.com)
-
-Decrypt options:
-      --token <token>       Encryption key from #token=... (not the link ID)
-      --link <id>           Link ID from upload JSON "link" field (/f/LINK_ID)
-      --upload-json <path>  Upload --json output (easiest for downloaded files)
-      --meta <path>         Saved clientEncryptionMeta JSON (offline decrypt)
-      --share-url <url>     Share URL for token/metadata when decrypting a local file
-  -o, --output <path>       Output file path (default: original filename)
-      --output-dir <dir>    Directory for decrypted file (default: cwd)
-      --json                Print machine-readable JSON to stdout
-  -q, --quiet               Print only the output file path
-      --verbose             Show error details on stderr
-      --base-url <url>      API base URL (default: https://bytifi.com)
-
-Global:
-  -V, --version             Show version
   -h, --help                Show this help
 
-Exit codes:
-  0  success
-  1  usage or validation error
-  2  API error (4xx/5xx response)
-  3  network error
+Concurrency auto-scales by file size when --concurrency is omitted:
+  ≤1 GB → 4 workers, 1–3 GB → 3 workers, ≥3 GB → 2 workers.
 
 Examples:
-  bytifi --version
   export BYTIFI_API_KEY=usk_your_key
-
   bytifi upload ./photo.png
   bytifi upload "./my report.pdf" --expires 60 --delete-on-download
   bytifi upload ./logs.txt --concurrency 8 --json > upload.json
   bytifi upload ./large.iso -q
+`)
+}
 
+function printDecryptHelp() {
+  process.stdout.write(`Bytifi decrypt — decrypt from a link or local encrypted file
+
+Usage:
+  bytifi decrypt <url-or-token|encrypted-file> [options]
+
+Options:
+      --token <token>       Encryption key from #token=... (not the link ID)
+      --link <id>           Link ID from upload JSON "link" field (/f/LINK_ID)
+      --upload-json <path>  Upload --json output (easiest for downloaded files)
+      --meta <path>         Saved clientEncryptionMeta JSON (offline decrypt)
+      --share-url <url>     Share URL for token/metadata when decrypting locally
+      --local-file          Treat input as a local path even if it looks like a URL
+  -o, --output <path>       Output file path (default: original filename)
+      --output-dir <dir>    Directory for decrypted file (default: cwd)
+      --force               Overwrite existing output file
+      --concurrency <n>     Parallel download workers, 1–8 (default: 2)
+      --json                Print machine-readable JSON to stdout
+  -q, --quiet               Print only the output file path
+      --verbose             Show error details on stderr
+      --base-url <url>      API base URL (default: https://bytifi.com)
+  -h, --help                Show this help
+
+Examples:
   bytifi decrypt 'https://bytifi.com/link?link=LINK#token=KEY'
   bytifi decrypt ./downloaded.bin --upload-json upload.json -o ./restored.bin
+  bytifi decrypt ./parts-dir/ --upload-json upload.json --force
 `)
 }
 
@@ -88,7 +121,7 @@ function parseUploadArgs(argv) {
     quiet: false,
     verbose: false,
     mimeType: '',
-    concurrency: 4,
+    concurrency: null,
     baseUrl: 'https://bytifi.com',
     help: false,
     version: false,
@@ -187,6 +220,9 @@ function parseDecryptArgs(argv) {
     shareUrl: '',
     output: '',
     outputDirectory: '',
+    localFile: false,
+    force: false,
+    concurrency: 2,
     json: false,
     quiet: false,
     verbose: false,
@@ -220,6 +256,16 @@ function parseDecryptArgs(argv) {
 
     if (arg === '--verbose') {
       options.verbose = true
+      continue
+    }
+
+    if (arg === '--force') {
+      options.force = true
+      continue
+    }
+
+    if (arg === '--local-file') {
+      options.localFile = true
       continue
     }
 
@@ -265,6 +311,17 @@ function parseDecryptArgs(argv) {
       continue
     }
 
+    if (arg === '--concurrency') {
+      const raw = readFlagValue(argv, index, arg)
+      const concurrency = Number(raw)
+      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+        throw new Error('concurrency must be an integer between 1 and 8.')
+      }
+      options.concurrency = concurrency
+      index += 1
+      continue
+    }
+
     if (arg === '--base-url') {
       options.baseUrl = readFlagValue(argv, index, arg)
       index += 1
@@ -281,6 +338,18 @@ function parseDecryptArgs(argv) {
   return { positional, options }
 }
 
+function warnSecretFlags(argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+    if (SECRET_FLAGS.has(arg)) {
+      process.stderr.write(
+        `Warning: ${arg} on the command line may appear in shell history and process lists. Prefer BYTIFI_API_KEY for uploads.\n`,
+      )
+      return
+    }
+  }
+}
+
 function validateExpires(minutes) {
   const allowed = new Set([5, 15, 30, 60, 120])
   if (!allowed.has(minutes)) {
@@ -288,8 +357,7 @@ function validateExpires(minutes) {
   }
 }
 
-function writeProgress(info) {
-  const line = formatProgressLine(info)
+function writeProgress(line) {
   if (line) {
     process.stderr.write(`\r${line}`)
   }
@@ -303,31 +371,52 @@ function clearProgressLine() {
   process.stderr.write('\r\x1b[K')
 }
 
-async function runUpload(filePath, options) {
-  validateExpires(options.expiresInMinutes)
-
-  if (!options.apiKey) {
-    throw new Error('Missing API key. Pass --api-key or set BYTIFI_API_KEY.')
-  }
-
-  const resolvedPath = path.resolve(filePath)
-
-  try {
-    await fs.access(resolvedPath)
-  } catch {
-    throw new Error(`File not found or not readable: ${resolvedPath}`)
-  }
-
+function createAbortContext(label) {
   const abortController = new AbortController()
+  let abortedByUser = false
 
   const handleSignal = () => {
+    abortedByUser = true
     abortController.abort()
   }
 
   process.on('SIGINT', handleSignal)
   process.on('SIGTERM', handleSignal)
 
+  return {
+    signal: abortController.signal,
+    cleanup() {
+      process.off('SIGINT', handleSignal)
+      process.off('SIGTERM', handleSignal)
+    },
+    checkAborted() {
+      if (abortedByUser || abortController.signal.aborted) {
+        clearProgressLine()
+        process.stderr.write(`${label} aborted.\n`)
+        process.exit(130)
+      }
+    },
+  }
+}
+
+async function runUpload(filePath, options) {
+  validateExpires(options.expiresInMinutes)
+  options.baseUrl = validateBaseUrl(options.baseUrl)
+
+  if (!options.apiKey) {
+    throw new Error('Missing API key. Pass --api-key or set BYTIFI_API_KEY.')
+  }
+
+  const resolvedPath = path.resolve(filePath)
+  const stat = await fs.stat(resolvedPath)
+
+  if (!stat.isFile()) {
+    throw new Error(`Upload path must be a file: ${resolvedPath}`)
+  }
+
+  const abort = createAbortContext('Upload')
   const showProgress = !options.quiet && !options.json
+  const tracker = createProgressTracker()
   let lastLine = ''
 
   try {
@@ -337,18 +426,21 @@ async function runUpload(filePath, options) {
       expiresInMinutes: options.expiresInMinutes,
       deleteOnDownload: options.deleteOnDownload,
       mimeType: options.mimeType || undefined,
-      concurrency: options.concurrency,
-      signal: abortController.signal,
+      concurrency: options.concurrency ?? undefined,
+      signal: abort.signal,
       onProgress: showProgress
         ? (info) => {
-            const line = formatProgressLine(info)
+            const enriched = tracker.update(info)
+            const line = formatProgressLine(enriched)
             if (line && line !== lastLine) {
               lastLine = line
-              writeProgress(info)
+              writeProgress(line)
             }
           }
         : undefined,
     })
+
+    abort.checkAborted()
 
     if (showProgress) {
       finishProgressLine()
@@ -367,23 +459,20 @@ async function runUpload(filePath, options) {
     process.stdout.write(`Share URL:\n${result.shareUrl}\n`)
     process.stdout.write(`Encrypted file:\n${result.encryptedFile}\n`)
     process.stdout.write(`Expires: ${result.expiresAt}\n`)
+  } catch (error) {
+    abort.checkAborted()
+    throw error
   } finally {
-    process.off('SIGINT', handleSignal)
-    process.off('SIGTERM', handleSignal)
+    abort.cleanup()
   }
 }
 
 async function runDecrypt(input, options) {
-  const abortController = new AbortController()
+  options.baseUrl = validateBaseUrl(options.baseUrl)
 
-  const handleSignal = () => {
-    abortController.abort()
-  }
-
-  process.on('SIGINT', handleSignal)
-  process.on('SIGTERM', handleSignal)
-
+  const abort = createAbortContext('Decrypt')
   const showProgress = !options.quiet && !options.json
+  const tracker = createProgressTracker()
   let lastLine = ''
 
   try {
@@ -395,18 +484,24 @@ async function runDecrypt(input, options) {
       shareUrl: options.shareUrl,
       output: options.output || undefined,
       outputDirectory: options.outputDirectory || undefined,
+      localFile: options.localFile,
+      force: options.force,
+      concurrency: options.concurrency,
       baseUrl: options.baseUrl,
-      signal: abortController.signal,
+      signal: abort.signal,
       onProgress: showProgress
         ? (info) => {
-            const line = formatProgressLine(info)
+            const enriched = tracker.update(info)
+            const line = formatProgressLine(enriched)
             if (line && line !== lastLine) {
               lastLine = line
-              writeProgress(info)
+              writeProgress(line)
             }
           }
         : undefined,
     })
+
+    abort.checkAborted()
 
     if (showProgress) {
       finishProgressLine()
@@ -425,9 +520,11 @@ async function runDecrypt(input, options) {
     process.stdout.write(`Saved: ${result.outputPath}\n`)
     process.stdout.write(`Original name: ${result.originalName}\n`)
     process.stdout.write(`Expires: ${result.expiresAt}\n`)
+  } catch (error) {
+    abort.checkAborted()
+    throw error
   } finally {
-    process.off('SIGINT', handleSignal)
-    process.off('SIGTERM', handleSignal)
+    abort.cleanup()
   }
 }
 
@@ -457,10 +554,13 @@ function printError(error, verbose) {
 }
 
 async function main() {
-  const [command, ...rest] = process.argv.slice(2)
+  const argv = process.argv.slice(2)
+  warnSecretFlags(argv)
+
+  const [command, ...rest] = argv
 
   if (!command || command === '--help' || command === '-h') {
-    printHelp()
+    printGlobalHelp()
     process.exit(0)
   }
 
@@ -470,7 +570,7 @@ async function main() {
   }
 
   if (command === 'help') {
-    printHelp()
+    printGlobalHelp()
     process.exit(0)
   }
 
@@ -478,7 +578,7 @@ async function main() {
     const { positional, options } = parseUploadArgs(rest)
 
     if (options.help) {
-      printHelp()
+      printUploadHelp()
       process.exit(0)
     }
 
@@ -510,7 +610,7 @@ async function main() {
     const { positional, options } = parseDecryptArgs(rest)
 
     if (options.help) {
-      printHelp()
+      printDecryptHelp()
       process.exit(0)
     }
 
@@ -529,7 +629,9 @@ async function main() {
     }
 
     if (positional.length > 1) {
-      process.stderr.write(`Warning: ignoring extra arguments: ${positional.slice(1).join(', ')}\n`)
+      throw new Error(
+        `Decrypt accepts one input at a time (got ${positional.length}). Quote paths with spaces.`,
+      )
     }
 
     await runDecrypt(input, options)

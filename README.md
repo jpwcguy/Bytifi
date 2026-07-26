@@ -45,7 +45,8 @@ Create an API key in **Account → API** on bytifi.com.
 ## Setup
 
 Set your API key via environment variable (see Install above) or pass `--api-key` per command.
-Prefer the environment variable — keys on the command line can appear in shell history and process lists.
+
+**Security:** Prefer `BYTIFI_API_KEY` over `--api-key` on the command line. API keys and encryption tokens passed as CLI flags may appear in shell history and process lists (`ps`). The CLI warns when secrets are passed on argv.
 
 ## Usage
 
@@ -59,7 +60,9 @@ bytifi upload ./logs.txt --concurrency 8 --json > upload.json
 bytifi upload ./photo.png -q
 ```
 
-Files up to **10 MB** are gzip-compressed per chunk before encryption. Larger files use multipart upload with fixed-size encrypted parts (no compression — gzip can expand ISO/zip data past the server part limit).
+Files up to **10 MB** use a single direct upload with gzip-compressed chunks. Files **over 10 MB** use multipart upload with fixed-size encrypted parts (no compression — gzip can expand ISO/zip data past the server part limit).
+
+Upload concurrency auto-scales when `--concurrency` is omitted: ≤1 GB → 4 workers, 1–3 GB → 3 workers, ≥3 GB → 2 workers.
 
 Upload accepts **one file at a time**. Quote paths that contain spaces. Avoid shell globs like `**` — your shell may expand them into dozens of paths.
 
@@ -70,6 +73,7 @@ Download and decrypt directly from a share URL or link token. No API key require
 ```bash
 bytifi decrypt 'https://bytifi.com/link?link=LINK_ID#token=ENCRYPTION_TOKEN'
 bytifi decrypt LINK_ID --token ENCRYPTION_TOKEN -o ./restored.mp4
+bytifi decrypt LINK_ID --token ENCRYPTION_TOKEN --concurrency 4
 ```
 
 ### Decrypt a downloaded encrypted file
@@ -84,6 +88,12 @@ bytifi decrypt ./downloaded-file --upload-json upload.json
 bytifi decrypt "./my video (1).mp4" \
   --link LINK_ID \
   --token ENCRYPTION_TOKEN
+
+# Force local-path mode when the filename looks like a URL
+bytifi decrypt ./https-example.bin --local-file --upload-json upload.json
+
+# Overwrite an existing output file
+bytifi decrypt ./downloaded-file --upload-json upload.json --force
 ```
 
 #### Link ID vs encryption token
@@ -128,7 +138,7 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 | `-q, --quiet` | Print only the share URL |
 | `--verbose` | Print API error details to stderr |
 | `--mime-type` | Override detected MIME type |
-| `--concurrency` | Parallel encrypt/upload workers, 1–16 (default: `4`) |
+| `--concurrency` | Parallel encrypt/upload workers, 1–16 (default: auto-scaled by file size) |
 | `--base-url` | API base URL (default: `https://bytifi.com`) |
 
 ### Decrypt options
@@ -140,24 +150,28 @@ Note: with `npm exec`, put `--` before the file path so npm does not swallow `--
 | `--upload-json` | Upload `--json` output file (recommended for downloaded files) |
 | `--meta` | Saved `clientEncryptionMeta` JSON for offline decrypt |
 | `--share-url` | Share URL to read token/metadata while decrypting a local file |
+| `--local-file` | Treat input as a local path even if it looks like a URL |
 | `-o, --output` | Output file path |
 | `--output-dir` | Output directory when saving under the original filename |
+| `--force` | Overwrite existing output file |
+| `--concurrency` | Parallel part download workers, 1–8 (default: `2`) |
 | `--json` | Machine-readable JSON output |
 | `-q, --quiet` | Print only the output file path |
 | `--verbose` | Print error details to stderr |
 | `--base-url` | API base URL (default: `https://bytifi.com`) |
 
-Exit codes: `0` success, `1` usage error, `2` API error, `3` network error.
+Exit codes: `0` success, `1` usage error, `2` API error, `3` network error, `130` interrupted (Ctrl+C).
 
 JSON output (`--json`) for upload includes `shareUrl`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, `compression`, and `expiresAt`.
 
 JSON output for decrypt includes `outputPath`, `originalName`, `size`, `mimeType`, `expiresAt`, `link`, `storageMode`, and `sourcePath` (for local decrypt).
 
-Files over ~100 MB encrypted use multipart upload automatically. Progress prints to stderr unless `--json` or `--quiet` is set.
+Progress prints to stderr with throughput and ETA unless `--json` or `--quiet` is set.
 
 ## Development
 
 ```bash
+npm test
 node bin/bytifi.js upload ./file.png --json > upload.json
 node bin/bytifi.js decrypt ./file.encrypted --upload-json upload.json
 ```

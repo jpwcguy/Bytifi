@@ -1,8 +1,9 @@
 {
   "name": "bytifi",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Official Bytifi CLI — encrypt, upload, and decrypt files from the terminal",
   "type": "module",
+  "author": "Bytifi",
   "bin": {
     "bytifi": "./bin/bytifi.js"
   },
@@ -14,10 +15,12 @@
     "node": ">=18"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "upload": "node bin/bytifi.js upload",
     "decrypt": "node bin/bytifi.js decrypt",
     "build:bundle": "node scripts/build-bundle.mjs",
-    "build:win": "npm run build:bundle && pkg dist/bytifi-bundle.cjs --targets node22-win-x64 --output dist/bytifi.exe --compress GZip --public --public-packages \"*\""
+    "build:win": "npm run build:bundle && pkg dist/bytifi-bundle.cjs --targets node22-win-x64 --output dist/bytifi.exe --compress GZip --public --public-packages \"*\"",
+    "prepublishOnly": "npm test"
   },
   "repository": {
     "type": "git",
