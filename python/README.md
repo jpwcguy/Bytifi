@@ -93,30 +93,3 @@ python -m venv .venv
 .venv/bin/python -m build
 .venv/bin/bytifi --version
 ```
-
-## Publishing
-
-Set tokens in the repo root `.env` (see `.env.example`):
-
-```env
-PYPI_TEST_API_TOKEN=pypi-...
-PYPI_API_TOKEN=pypi-...
-```
-
-**TestPyPI:**
-
-```bash
-./scripts/publish-testpypi.sh
-```
-
-**Production PyPI:**
-
-```bash
-./scripts/publish-pypi.sh
-```
-
-Install from TestPyPI:
-
-```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bytifi
-```
