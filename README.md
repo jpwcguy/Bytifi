@@ -35,6 +35,8 @@ bytifi --version
 pip install --upgrade bytifi
 ```
 
+**Use in code:** see [`python/API.md`](python/API.md).
+
 ### Windows (WinGet)
 
 ```powershell
