@@ -1,6 +1,6 @@
 {
   "name": "bytifi",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Official Bytifi CLI — encrypt, upload, and decrypt files from the terminal",
   "type": "module",
   "author": "Bytifi",

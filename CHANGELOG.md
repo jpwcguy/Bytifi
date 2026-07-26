@@ -2,6 +2,11 @@
 
 All notable changes to the Bytifi CLI are documented here.
 
+## 0.2.8 — 2026-07-26
+
+### Fixed
+- Direct uploads with gzip compression now send `encryptedSize` in metadata so the server accepts the compressed ciphertext size.
+
 ## 0.2.7 — 2026-07-26
 
 ### Added
