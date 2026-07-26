@@ -291,6 +291,10 @@ function writeProgress(label, percent) {
   process.stderr.write(`\r${label}: ${percent}%`)
 }
 
+function finishProgressLine() {
+  process.stderr.write('\n')
+}
+
 function clearProgressLine() {
   process.stderr.write('\r\x1b[K')
 }
@@ -342,7 +346,7 @@ async function runUpload(filePath, options) {
     })
 
     if (showProgress) {
-      clearProgressLine()
+      finishProgressLine()
     }
 
     if (options.json) {
@@ -399,7 +403,7 @@ async function runDecrypt(input, options) {
     })
 
     if (showProgress) {
-      clearProgressLine()
+      finishProgressLine()
     }
 
     if (options.json) {
@@ -531,6 +535,7 @@ async function main() {
 
 main().catch((error) => {
   clearProgressLine()
+  finishProgressLine()
   const verbose = process.argv.includes('--verbose')
   printError(error, verbose)
   process.exit(exitCodeForError(error))
