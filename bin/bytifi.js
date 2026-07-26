@@ -8,7 +8,10 @@ import { decryptFile } from '../lib/decrypt.js'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
 const require = createRequire(import.meta.url)
-const { version } = require('../package.json')
+const version =
+  typeof __BYTIFI_VERSION__ !== 'undefined'
+    ? __BYTIFI_VERSION__
+    : require('../package.json').version
 
 function printHelp() {
   process.stdout.write(`Bytifi CLI v${version} — encrypt, upload, and decrypt files
