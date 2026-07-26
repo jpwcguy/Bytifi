@@ -35,8 +35,6 @@ bytifi --version
 pip install --upgrade bytifi
 ```
 
-See [`python/README.md`](python/README.md) for development.
-
 ### Windows (WinGet)
 
 ```powershell

@@ -82,14 +82,3 @@ bytifi decrypt ./downloaded.bin --upload-json upload.json -o ./restored.bin
 | `--base-url` | API base URL (default: `https://bytifi.com`) |
 
 For local encrypted files, `--link`, `--meta`, and `--local-file`, use the [Node.js CLI](../README.md) for now.
-
-## Development
-
-```bash
-cd python
-python -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m build
-.venv/bin/bytifi --version
-```
