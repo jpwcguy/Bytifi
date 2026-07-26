@@ -59,7 +59,7 @@ bytifi upload ./logs.txt --concurrency 8 --json > upload.json
 bytifi upload ./photo.png -q
 ```
 
-All uploads are gzip-compressed per chunk before encryption. Files over **10 MB** use multipart upload automatically.
+Files up to **10 MB** are gzip-compressed per chunk before encryption. Larger files use multipart upload with fixed-size encrypted parts (no compression — gzip can expand ISO/zip data past the server part limit).
 
 Upload accepts **one file at a time**. Quote paths that contain spaces. Avoid shell globs like `**` — your shell may expand them into dozens of paths.
 
