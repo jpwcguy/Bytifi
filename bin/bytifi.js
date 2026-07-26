@@ -5,6 +5,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
 import { decryptFile } from '../lib/decrypt.js'
+import { formatProgressLine } from '../lib/progress.js'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
 const require = createRequire(import.meta.url)
@@ -287,8 +288,11 @@ function validateExpires(minutes) {
   }
 }
 
-function writeProgress(label, percent) {
-  process.stderr.write(`\r${label}: ${percent}%`)
+function writeProgress(info) {
+  const line = formatProgressLine(info)
+  if (line) {
+    process.stderr.write(`\r${line}`)
+  }
 }
 
 function finishProgressLine() {
@@ -324,7 +328,7 @@ async function runUpload(filePath, options) {
   process.on('SIGTERM', handleSignal)
 
   const showProgress = !options.quiet && !options.json
-  let lastPercent = -1
+  let lastLine = ''
 
   try {
     const result = await uploadFile(resolvedPath, {
@@ -336,10 +340,11 @@ async function runUpload(filePath, options) {
       concurrency: options.concurrency,
       signal: abortController.signal,
       onProgress: showProgress
-        ? (percent) => {
-            if (percent !== lastPercent) {
-              lastPercent = percent
-              writeProgress('Encrypting and uploading', percent)
+        ? (info) => {
+            const line = formatProgressLine(info)
+            if (line && line !== lastLine) {
+              lastLine = line
+              writeProgress(info)
             }
           }
         : undefined,
@@ -379,7 +384,7 @@ async function runDecrypt(input, options) {
   process.on('SIGTERM', handleSignal)
 
   const showProgress = !options.quiet && !options.json
-  let lastPercent = -1
+  let lastLine = ''
 
   try {
     const result = await decryptFile(input, {
@@ -393,10 +398,11 @@ async function runDecrypt(input, options) {
       baseUrl: options.baseUrl,
       signal: abortController.signal,
       onProgress: showProgress
-        ? (percent) => {
-            if (percent !== lastPercent) {
-              lastPercent = percent
-              writeProgress('Downloading and decrypting', percent)
+        ? (info) => {
+            const line = formatProgressLine(info)
+            if (line && line !== lastLine) {
+              lastLine = line
+              writeProgress(info)
             }
           }
         : undefined,
