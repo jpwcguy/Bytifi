@@ -20,6 +20,23 @@ cd Bytifi
 npm link
 ```
 
+### Python (PyPI)
+
+Requires **Python 3.10+**.
+
+```bash
+pip install bytifi
+bytifi --version
+```
+
+**Upgrade:**
+
+```bash
+pip install --upgrade bytifi
+```
+
+See [`python/README.md`](python/README.md) for development and publishing.
+
 ### Windows (WinGet)
 
 ```powershell

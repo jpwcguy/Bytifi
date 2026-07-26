@@ -4,6 +4,13 @@ node_modules/
 .env
 .env.*
 !.env.example
+.pypirc
 dist/
 coverage/
 test-output/
+python/.venv/
+python/dist/
+python/build/
+python/*.egg-info/
+__pycache__/
+*.pyc

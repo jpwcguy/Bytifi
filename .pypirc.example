@@ -1,0 +1,21 @@
+# Copy to ~/.pypirc (recommended) or .pypirc in this repo.
+# Never commit the real file — .pypirc is gitignored.
+#
+#   cp .pypirc.example ~/.pypirc
+#   chmod 600 ~/.pypirc
+#
+# Create token: https://pypi.org/manage/account/token/
+
+[distutils]
+index-servers =
+    pypi
+    testpypi
+
+[pypi]
+username = __token__
+password = pypi-your_production_token_here
+
+[testpypi]
+repository = https://test.pypi.org/legacy/
+username = __token__
+password = pypi-your_test_token_here
