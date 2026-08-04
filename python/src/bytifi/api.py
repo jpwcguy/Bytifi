@@ -39,9 +39,12 @@ def parse_retry_after_ms(response: httpx.Response) -> int | None:
             if seconds >= 0:
                 return int(seconds * 1000)
         except ValueError:
-            parsed = email.utils.parsedate_to_datetime(retry_after)
-            if parsed is not None:
-                return max(0, int(parsed.timestamp() * 1000 - time.time() * 1000))
+            try:
+                parsed = email.utils.parsedate_to_datetime(retry_after)
+                if parsed is not None:
+                    return max(0, int(parsed.timestamp() * 1000 - time.time() * 1000))
+            except (ValueError, TypeError, OverflowError):
+                pass
 
     reset_header = response.headers.get("RateLimit-Reset")
     if reset_header:

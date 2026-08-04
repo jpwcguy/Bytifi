@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bytifi"
-version = "0.2.12"
+version = "0.2.13"
 description = "Official Bytifi CLI — encrypt, upload, and decrypt files from the terminal"
 readme = "README.md"
 license = "MIT"

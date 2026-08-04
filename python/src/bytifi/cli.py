@@ -86,7 +86,7 @@ def _run_upload(args: argparse.Namespace) -> int:
     except BytifiNetworkError as error:
         print(str(error), file=sys.stderr)
         return 3
-    except (ValueError, FileNotFoundError) as error:
+    except (ValueError, FileNotFoundError, TimeoutError) as error:
         print(str(error), file=sys.stderr)
         return 1
 
@@ -124,7 +124,7 @@ def _run_decrypt(args: argparse.Namespace) -> int:
     except BytifiNetworkError as error:
         print(str(error), file=sys.stderr)
         return 3
-    except (ValueError, FileExistsError) as error:
+    except (ValueError, FileExistsError, FileNotFoundError, TimeoutError) as error:
         print(str(error), file=sys.stderr)
         return 1
 

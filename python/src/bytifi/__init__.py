@@ -20,7 +20,7 @@ from .decrypt import decrypt_from_link, load_upload_json, parse_decrypt_input
 from .upload import upload_file
 from .url import DEFAULT_BASE_URL, normalize_base_url, validate_base_url
 
-__version__ = "0.2.12"
+__version__ = "0.2.13"
 
 __all__ = [
     "DEFAULT_BASE_URL",

@@ -123,9 +123,15 @@ def _decrypt_from_parts(
 
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = [executor.submit(process_part, index) for index in range(len(chunks))]
-        for future in as_completed(futures):
-            index, plain_part = future.result()
-            results[index] = plain_part
+        try:
+            for future in as_completed(futures):
+                index, plain_part = future.result()
+                results[index] = plain_part
+        except Exception:
+            for pending in futures:
+                pending.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
 
     with output_path.open("wb") as handle:
         for plain_part in results:

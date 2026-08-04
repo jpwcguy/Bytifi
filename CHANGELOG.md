@@ -2,6 +2,14 @@
 
 All notable changes to the Bytifi CLI are documented here.
 
+## 0.2.13 — 2026-08-04
+
+### Fixed
+- Python CLI no longer crashes on malformed non-numeric `Retry-After` headers
+- Python upload/decrypt timeouts surface a clean error instead of a traceback
+- Multipart decrypt cancels sibling workers on failure (Node + Python)
+- Node multipart decrypt opens the output file only after parts succeed (avoids empty leftover files on Windows)
+
 ## 0.2.12 — 2026-08-04
 
 ### Fixed
