@@ -2,6 +2,11 @@
 
 All notable changes to the Bytifi CLI are documented here.
 
+## 0.2.11 — 2026-08-04
+
+### Fixed
+- Windows `bytifi.exe` (pkg) no longer crashes on startup with `createRequire(... Received undefined)` when `import.meta.url` is empty inside the CJS snapshot. Version is injected at bundle time and the `createRequire` fallback is stripped from the Windows build.
+
 ## 0.2.8 — 2026-07-26
 
 ### Fixed

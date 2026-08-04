@@ -9,11 +9,13 @@ import { createProgressTracker, formatProgressLine } from '../lib/progress.js'
 import { validateBaseUrl } from '../lib/url.js'
 import { BytifiApiError, BytifiNetworkError, uploadFile } from '../lib/upload.js'
 
-const require = createRequire(import.meta.url)
+// Prefer the build-time inject for pkg/Windows exe. Never call createRequire when
+// __BYTIFI_VERSION__ is defined — import.meta.url is undefined inside the CJS
+// snapshot and crashes with ERR_INVALID_ARG_VALUE before any command runs.
 const version =
   typeof __BYTIFI_VERSION__ !== 'undefined'
     ? __BYTIFI_VERSION__
-    : require('../package.json').version
+    : createRequire(import.meta.url)('../package.json').version
 
 const SECRET_FLAGS = new Set(['--api-key', '-k', '--token'])
 
