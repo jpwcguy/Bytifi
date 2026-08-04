@@ -47,8 +47,14 @@ def parse_retry_after_ms(response: httpx.Response) -> int | None:
     if reset_header:
         try:
             reset_value = float(reset_header)
-            if reset_value > 1_000_000_000:
-                return max(0, int(reset_value * 1000 - time.time() * 1000))
+            now_ms = time.time() * 1000
+            # Absolute Unix time in milliseconds
+            if reset_value > 1e12:
+                return max(0, int(reset_value - now_ms))
+            # Absolute Unix time in seconds
+            if reset_value > 1e9:
+                return max(0, int(reset_value * 1000 - now_ms))
+            # Relative delay in seconds
             return max(0, int(reset_value * 1000))
         except ValueError:
             pass

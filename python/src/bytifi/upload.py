@@ -248,9 +248,10 @@ def _upload_multipart_streaming(
         )
         return part_number
 
+    executor = ThreadPoolExecutor(max_workers=worker_count)
     try:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = [executor.submit(upload_part, index) for index in range(context.chunk_count)]
+        futures = [executor.submit(upload_part, index) for index in range(context.chunk_count)]
+        try:
             for future in as_completed(futures):
                 future.result()
                 completed_parts += 1
@@ -261,11 +262,16 @@ def _upload_multipart_streaming(
                     "percent": _upload_progress_percent(completed_parts, 0, context.chunk_count),
                     "detail": f"{completed_parts}/{context.chunk_count} parts done",
                 })
-    except Exception:
-        if not session_aborted:
-            session_aborted = True
-            _abort_upload_session(base_url, session_token, api_key=api_key)
-        raise
+        except Exception:
+            for pending in futures:
+                pending.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            if not session_aborted:
+                session_aborted = True
+                _abort_upload_session(base_url, session_token, api_key=api_key)
+            raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
     on_progress and on_progress({"stage": "finalizing", "percent": 99, "detail": "completing upload session"})
 

@@ -442,8 +442,7 @@ async function runUpload(filePath, options) {
         : undefined,
     })
 
-    abort.checkAborted()
-
+    // Print success even if SIGINT arrived after the upload finished.
     if (showProgress) {
       finishProgressLine()
     }
@@ -503,8 +502,7 @@ async function runDecrypt(input, options) {
         : undefined,
     })
 
-    abort.checkAborted()
-
+    // Print success even if SIGINT arrived after decrypt finished.
     if (showProgress) {
       finishProgressLine()
     }

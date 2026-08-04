@@ -2,6 +2,17 @@
 
 All notable changes to the Bytifi CLI are documented here.
 
+## 0.2.12 — 2026-08-04
+
+### Fixed
+- Multipart uploads no longer pass `undefined` into `AbortSignal.any` when no caller signal is provided
+- Multipart session abort on failure no longer reuses an already-aborted signal (so Ctrl+C cleanup can reach the API)
+- Successful upload/decrypt results are printed even if SIGINT arrives after the operation finishes
+- Remote decrypt uses multipart when `partCount > 1`, even if `storageMode` is missing
+- `RateLimit-Reset` values in Unix milliseconds no longer cause multi-year sleeps (Node + Python)
+- Decrypt rejects output paths that are directories and validates `noncePrefix` length
+- Python multipart upload cancels sibling part workers before aborting the session on failure
+
 ## 0.2.11 — 2026-08-04
 
 ### Fixed

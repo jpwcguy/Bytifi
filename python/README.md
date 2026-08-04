@@ -51,8 +51,10 @@ bytifi upload ./photo.png -q
 
 bytifi decrypt 'https://bytifi.com/link?link=LINK#token=KEY' -o ./restored.png
 bytifi decrypt LINK --token ENCRYPTION_TOKEN -o ./restored.png
-bytifi decrypt ./downloaded.bin --upload-json upload.json -o ./restored.bin
+bytifi decrypt LINK --token ENCRYPTION_TOKEN -o ./restored.bin
 ```
+
+For offline decrypt of an already-downloaded encrypted blob, use the Node CLI (`bytifi decrypt ./file.bin --upload-json upload.json`).
 
 ### Upload options
 
