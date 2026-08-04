@@ -37,6 +37,8 @@ pip install --upgrade bytifi
 
 **Use in code:** see [`python/API.md`](python/API.md).
 
+**Develop / publish the Python package from this repo:** see [`python/README.md`](python/README.md) (`pyproject.toml`, tests, and publish scripts).
+
 ### Windows (WinGet)
 
 ```powershell
