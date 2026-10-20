@@ -20,6 +20,7 @@
     "decrypt": "node bin/bytifi.js decrypt",
     "build:bundle": "node scripts/build-bundle.mjs",
     "build:win": "npm run build:bundle && pkg dist/bytifi-bundle.cjs --targets node22-win-x64 --output dist/bytifi.exe --compress GZip --public --public-packages \"*\"",
+    "build:win:arm64": "npm run build:bundle && pkg dist/bytifi-bundle.cjs --targets node22-win-arm64 --output dist/bytifi-arm64.exe --compress GZip --public --public-packages \"*\"",
     "prepublishOnly": "npm test"
   },
   "repository": {

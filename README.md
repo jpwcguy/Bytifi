@@ -45,7 +45,33 @@ pip install --upgrade bytifi
 winget install Bytifi.Bytifi
 ```
 
+Open a new terminal after installing. `bytifi.exe` is a portable program, and WinGet links it from `%LOCALAPPDATA%\Microsoft\WinGet\Links`. That folder is on your user PATH, but an already-open terminal will not see it yet. If `bytifi` is still missing, the copy itself is under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`.
+
+`bytifi.exe` includes Node.js 22. You do not need Node installed to run it. The npm package still runs on Node.js 18 or newer. The x64 build is `bytifi.exe`. An ARM64 build is produced with `npm run build:win:arm64`, which writes `dist/bytifi-arm64.exe`.
+
 Or download [bytifi.exe from GitHub Releases](https://github.com/jpwcguy/Bytifi/releases/latest).
+
+### macOS (Homebrew)
+
+```bash
+brew install --formula https://raw.githubusercontent.com/jpwcguy/Bytifi/master/packaging/homebrew/bytifi.rb
+```
+
+The formula installs the published npm package and needs Node.js, which Homebrew installs for you. The formula in this repo is `packaging/homebrew/bytifi.rb`.
+
+### Linux
+
+npm and pip are the supported installs. There is no distro package.
+
+```bash
+npm install -g bytifi
+```
+
+or:
+
+```bash
+pip install bytifi
+```
 
 ### Environment variable (all platforms)
 
