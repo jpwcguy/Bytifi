@@ -207,19 +207,37 @@ def resolve_upload_file(file_path: str | os.PathLike, *, mime_type: str | None =
     return absolute_path, context
 
 
-def read_plain_chunk(file_path: Path, chunk_index: int, original_size: int, plain_chunk_size: int) -> bytes:
+def read_plain_chunk(
+    file_path: Path,
+    chunk_index: int,
+    original_size: int,
+    plain_chunk_size: int,
+    handle=None,
+) -> bytes:
     start = chunk_index * plain_chunk_size
     length = min(plain_chunk_size, original_size - start)
-    with file_path.open("rb") as handle:
-        handle.seek(start)
-        data = handle.read(length)
-    if len(data) != length:
-        raise ValueError("File ended before the upload was complete.")
-    return data
+
+    def read_from(source) -> bytes:
+        source.seek(start)
+        data = source.read(length)
+        if len(data) != length:
+            raise ValueError("File ended before the upload was complete.")
+        return data
+
+    if handle is None:
+        with file_path.open("rb") as owned:
+            return read_from(owned)
+    return read_from(handle)
 
 
-def encrypt_chunk_from_file(file_path: Path, chunk_index: int, context: EncryptionContext) -> bytes:
-    plain_chunk = read_plain_chunk(file_path, chunk_index, context.original_size, context.plain_chunk_size)
+def encrypt_chunk_from_file(file_path: Path, chunk_index: int, context: EncryptionContext, handle=None) -> bytes:
+    plain_chunk = read_plain_chunk(
+        file_path,
+        chunk_index,
+        context.original_size,
+        context.plain_chunk_size,
+        handle=handle,
+    )
     payload = compress_plain_chunk(plain_chunk) if context.compression == "gzip" else plain_chunk
     return encrypt_chunk(payload, context.token_bytes, context.nonce_prefix, chunk_index)
 

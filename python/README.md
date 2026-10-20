@@ -51,10 +51,11 @@ bytifi upload ./photo.png -q
 
 bytifi decrypt 'https://bytifi.com/link?link=LINK#token=KEY' -o ./restored.png
 bytifi decrypt LINK --token ENCRYPTION_TOKEN -o ./restored.png
-bytifi decrypt LINK --token ENCRYPTION_TOKEN -o ./restored.bin
+bytifi decrypt ./file.encrypted --upload-json upload.json -o ./restored.bin
+bytifi decrypt ./parts-dir --upload-json upload.json --output-dir ./out
 ```
 
-For offline decrypt of an already-downloaded encrypted blob, use the Node CLI (`bytifi decrypt ./file.bin --upload-json upload.json`).
+A saved `upload.json` with `encryptionToken` and `clientEncryptionMeta` decrypts a local file without calling the API, including after the link has expired.
 
 ### Upload options
 
@@ -75,15 +76,21 @@ For offline decrypt of an already-downloaded encrypted blob, use the Node CLI (`
 | Flag | Description |
 |------|-------------|
 | `--token` | Encryption key from `#token=...` |
+| `--link` | Link ID when it is not in the input |
+| `--meta` | Encryption metadata JSON |
 | `--upload-json` | Upload `--json` output file |
+| `--share-url` | Share URL used with a local encrypted file |
+| `--local-file` | Treat the input as a local path |
 | `-o, --output` | Output file path |
+| `--output-dir` | Directory for the decrypted file |
+| `--json` | Machine-readable JSON output |
 | `--force` | Overwrite existing output file |
 | `--concurrency` | Parallel part download workers, 1–8 |
 | `-q, --quiet` | Print only the output path |
 | `--verbose` | Print error details to stderr |
 | `--base-url` | API base URL (default: `https://bytifi.com`) |
 
-For local encrypted files, `--link`, `--meta`, and `--local-file`, use the [Node.js CLI](../README.md) for now.
+`--json` and `--quiet` cannot be used together. Ctrl+C stops an upload or decrypt and exits with status 130.
 
 **Library API:** see [`API.md`](API.md).
 
@@ -107,10 +114,24 @@ chmod 600 ~/.pypirc
 ```bash
 cd python
 python -m venv .venv
+```
+
+macOS and Linux:
+
+```bash
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m build
 .venv/bin/bytifi --version
+```
+
+Windows:
+
+```powershell
+.venv\Scripts\pip install -e ".[dev]"
+.venv\Scripts\python -m unittest discover -s tests -v
+.venv\Scripts\python -m build
+.venv\Scripts\bytifi --version
 ```
 
 ## Publishing

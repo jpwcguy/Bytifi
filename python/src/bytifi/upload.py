@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 
-from .api import UNLIMITED_RATE_LIMIT_RETRIES, api_fetch_with_retry
+from .api import UNLIMITED_RATE_LIMIT_RETRIES, api_fetch_with_retry, cancel_requested
+from .url import normalize_base_url
 from .crypto import (
     MULTIPART_THRESHOLD_BYTES,
     EncryptionContext,
@@ -24,7 +26,7 @@ def _build_share_url(payload: dict, encryption_token: str) -> str:
     return f"{payload['url']}#token={quote(encryption_token, safe='')}"
 
 
-def _build_result(payload: dict, context: EncryptionContext, share_url: str) -> dict:
+def _build_result(payload: dict, context: EncryptionContext, share_url: str, base_url: str) -> dict:
     return {
         "shareUrl": share_url,
         "url": payload["url"],
@@ -38,6 +40,7 @@ def _build_result(payload: dict, context: EncryptionContext, share_url: str) -> 
         "deleteOnDownload": payload.get("deleteOnDownload"),
         "clientEncrypted": payload.get("clientEncrypted"),
         "compression": context.compression,
+        "baseUrl": normalize_base_url(base_url),
     }
 
 
@@ -53,20 +56,26 @@ def _collect_encrypted_buffer(
     on_progress: Callable[[dict], None] | None = None,
 ) -> bytes:
     encrypted_parts: list[bytes] = []
-    for chunk_index in range(context.chunk_count):
-        on_progress and on_progress({
-            "stage": "encrypting",
-            "part": chunk_index + 1,
-            "totalParts": context.chunk_count,
-            "percent": round((chunk_index / context.chunk_count) * 90),
-        })
-        encrypted_parts.append(encrypt_chunk_from_file(file_path, chunk_index, context))
-        on_progress and on_progress({
-            "stage": "encrypted",
-            "part": chunk_index + 1,
-            "totalParts": context.chunk_count,
-            "percent": round(((chunk_index + 1) / context.chunk_count) * 90),
-        })
+    with file_path.open("rb") as handle:
+        for chunk_index in range(context.chunk_count):
+            if cancel_requested():
+                raise KeyboardInterrupt
+            on_progress and on_progress({
+                "stage": "encrypting",
+                "part": chunk_index + 1,
+                "totalParts": context.chunk_count,
+                "percent": round((chunk_index / context.chunk_count) * 90),
+            })
+            encrypted_parts.append(encrypt_chunk_from_file(file_path, chunk_index, context, handle=handle))
+            done = min(context.original_size, (chunk_index + 1) * context.plain_chunk_size)
+            on_progress and on_progress({
+                "stage": "encrypted",
+                "part": chunk_index + 1,
+                "totalParts": context.chunk_count,
+                "downloadedBytes": done,
+                "totalBytes": context.original_size,
+                "percent": round(((chunk_index + 1) / context.chunk_count) * 90),
+            })
 
     on_progress and on_progress({"stage": "uploading", "percent": 95, "detail": "direct upload"})
     return b"".join(encrypted_parts)
@@ -105,7 +114,7 @@ def _upload_direct(
 
     on_progress and on_progress({"stage": "complete", "percent": 100})
     share_url = _build_share_url(payload, context.token)
-    return _build_result(payload, context, share_url)
+    return _build_result(payload, context, share_url, base_url)
 
 
 def _poll_upload_status(
@@ -140,9 +149,16 @@ def _poll_upload_status(
         time.sleep(POLL_INTERVAL_MS / 1000)
 
 
-def _resolve_upload_concurrency(original_size: int, requested: int | None) -> int:
-    if requested is not None and requested > 0:
-        return min(16, max(1, int(requested)))
+def _resolve_upload_concurrency(original_size: int, requested: int | None, *, strict: bool = False) -> int:
+    if requested is not None:
+        if strict and (isinstance(requested, bool) or not isinstance(requested, int) or requested < 1 or requested > 16):
+            raise ValueError("concurrency must be an integer between 1 and 16.")
+        try:
+            number = int(requested)
+        except (TypeError, ValueError):
+            number = 0
+        if number > 0:
+            return min(16, max(1, number))
 
     if original_size >= 3 * 1024 * 1024 * 1024:
         return 2
@@ -162,7 +178,7 @@ def _abort_upload_session(base_url: str, session_token: str, *, api_key: str) ->
             content=json.dumps({"sessionToken": session_token}).encode("utf-8"),
             retries=1,
         )
-    except Exception:
+    except (Exception, KeyboardInterrupt):
         pass
 
 
@@ -208,28 +224,46 @@ def _upload_multipart_streaming(
     )
 
     session_token = init_payload["sessionToken"]
+    requested_concurrency = concurrency if concurrency is not None else init_payload.get("concurrency")
     worker_count = min(
-        _resolve_upload_concurrency(context.original_size, concurrency or init_payload.get("concurrency")),
+        _resolve_upload_concurrency(
+            context.original_size,
+            requested_concurrency,
+            strict=concurrency is not None,
+        ),
         context.chunk_count,
     )
 
     completed_parts = 0
+    completed_bytes = 0
     session_aborted = False
+    read_lock = threading.Lock()
 
-    def upload_part(chunk_index: int) -> int:
+    def plain_bytes(chunk_index: int) -> int:
+        start = chunk_index * context.plain_chunk_size
+        return min(context.plain_chunk_size, context.original_size - start)
+
+    def upload_part(chunk_index: int) -> tuple[int, int]:
+        if cancel_requested():
+            raise KeyboardInterrupt
         part_number = chunk_index + 1
         on_progress and on_progress({
             "stage": "encrypting",
             "part": part_number,
             "totalParts": context.chunk_count,
+            "downloadedBytes": completed_bytes,
+            "totalBytes": context.original_size,
             "percent": _upload_progress_percent(completed_parts, 1, context.chunk_count),
         })
-        encrypted_part = encrypt_chunk_from_file(file_path, chunk_index, context)
+        with read_lock:
+            encrypted_part = encrypt_chunk_from_file(file_path, chunk_index, context, handle=source)
         on_progress and on_progress({
             "stage": "uploading",
             "part": part_number,
             "totalParts": context.chunk_count,
             "partBytes": len(encrypted_part),
+            "downloadedBytes": completed_bytes,
+            "totalBytes": context.original_size,
             "percent": _upload_progress_percent(completed_parts, 1, context.chunk_count),
         })
         api_fetch_with_retry(
@@ -246,23 +280,27 @@ def _upload_multipart_streaming(
             rate_limit_retries=UNLIMITED_RATE_LIMIT_RETRIES,
             max_rate_limit_wait_ms=15_000,
         )
-        return part_number
+        return part_number, plain_bytes(chunk_index)
 
+    source = file_path.open("rb")
     executor = ThreadPoolExecutor(max_workers=worker_count)
     try:
         futures = [executor.submit(upload_part, index) for index in range(context.chunk_count)]
         try:
             for future in as_completed(futures):
-                future.result()
+                _part_number, part_bytes = future.result()
                 completed_parts += 1
+                completed_bytes += part_bytes
                 on_progress and on_progress({
                     "stage": "uploaded",
                     "part": completed_parts,
                     "totalParts": context.chunk_count,
+                    "downloadedBytes": completed_bytes,
+                    "totalBytes": context.original_size,
                     "percent": _upload_progress_percent(completed_parts, 0, context.chunk_count),
                     "detail": f"{completed_parts}/{context.chunk_count} parts done",
                 })
-        except Exception:
+        except (Exception, KeyboardInterrupt):
             for pending in futures:
                 pending.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
@@ -272,6 +310,7 @@ def _upload_multipart_streaming(
             raise
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
+        source.close()
 
     on_progress and on_progress({"stage": "finalizing", "percent": 99, "detail": "completing upload session"})
 
@@ -291,7 +330,7 @@ def _upload_multipart_streaming(
 
     on_progress and on_progress({"stage": "complete", "percent": 100})
     share_url = _build_share_url(complete_payload, context.token)
-    return _build_result(complete_payload, context, share_url)
+    return _build_result(complete_payload, context, share_url, base_url)
 
 
 def upload_file(

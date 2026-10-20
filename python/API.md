@@ -84,13 +84,13 @@ result = upload_file(
 )
 ```
 
-**Result keys:** `shareUrl`, `url`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, `originalName`, `size`, `expiresAt`, `deleteOnDownload`, `clientEncrypted`, `compression`.
+**Result keys:** `shareUrl`, `url`, `encryptedFile`, `link`, `encryptionToken`, `clientEncryptionMeta`, `originalName`, `size`, `expiresAt`, `deleteOnDownload`, `clientEncrypted`, `compression`, `baseUrl`.
 
 Files **≤ 10 MB** use a single gzip-compressed direct upload. Larger files use multipart upload (no gzip).
 
 ## `decrypt_from_link`
 
-Download and decrypt from a share URL, link token, or upload JSON.
+Download and decrypt from a share URL or link token, or decrypt a local encrypted file. When `upload_json_path` already contains `encryptionToken` and `clientEncryptionMeta`, a local file is decrypted without calling the API. `load_upload_json` raises `ValueError` if either field is missing.
 
 ```python
 # Full share URL (token in #fragment)

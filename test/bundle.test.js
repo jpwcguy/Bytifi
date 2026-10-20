@@ -29,6 +29,13 @@ test('build:bundle injects version and strips createRequire(import.meta.url)', (
   assert.doesNotMatch(source, /import_meta\.url|import\.meta\.url/)
 })
 
+test('standalone Windows builds embed Node 22 while npm still accepts Node 18', () => {
+  const pkg = require('../package.json')
+  assert.equal(pkg.engines.node, '>=18')
+  assert.match(pkg.scripts['build:win'], /node22-win-x64/)
+  assert.match(pkg.scripts['build:win:arm64'], /node22-win-arm64/)
+})
+
 test('bundled CLI starts and prints version', () => {
   assert.ok(fs.existsSync(bundlePath), 'run the build test first or npm run build:bundle')
   const result = spawnSync(process.execPath, [bundlePath, '--version'], {

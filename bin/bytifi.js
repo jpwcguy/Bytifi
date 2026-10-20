@@ -105,6 +105,13 @@ Examples:
 `)
 }
 
+function parsePlainInteger(raw, label) {
+  if (!/^[0-9]+$/.test(String(raw || ''))) {
+    throw new Error(`${label} must be a plain integer.`)
+  }
+  return Number(raw)
+}
+
 function readFlagValue(argv, index, flagName) {
   const value = argv[index + 1]
   if (!value || value.startsWith('-')) {
@@ -170,11 +177,7 @@ function parseUploadArgs(argv) {
 
     if (arg === '--expires' || arg === '-e') {
       const raw = readFlagValue(argv, index, arg)
-      const minutes = Number(raw)
-      if (!Number.isFinite(minutes)) {
-        throw new Error(`Invalid expires value: ${raw}`)
-      }
-      options.expiresInMinutes = minutes
+      options.expiresInMinutes = parsePlainInteger(raw, 'expires')
       index += 1
       continue
     }
@@ -187,8 +190,8 @@ function parseUploadArgs(argv) {
 
     if (arg === '--concurrency') {
       const raw = readFlagValue(argv, index, arg)
-      const concurrency = Number(raw)
-      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) {
+      const concurrency = parsePlainInteger(raw, 'concurrency')
+      if (concurrency < 1 || concurrency > 16) {
         throw new Error('concurrency must be an integer between 1 and 16.')
       }
       options.concurrency = concurrency
@@ -315,8 +318,8 @@ function parseDecryptArgs(argv) {
 
     if (arg === '--concurrency') {
       const raw = readFlagValue(argv, index, arg)
-      const concurrency = Number(raw)
-      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+      const concurrency = parsePlainInteger(raw, 'concurrency')
+      if (concurrency < 1 || concurrency > 8) {
         throw new Error('concurrency must be an integer between 1 and 8.')
       }
       options.concurrency = concurrency
@@ -359,18 +362,27 @@ function validateExpires(minutes) {
   }
 }
 
+let progressWidth = 0
+
 function writeProgress(line) {
-  if (line) {
-    process.stderr.write(`\r${line}`)
-  }
+  if (!line) return
+  const padded = line.length < progressWidth ? line + ' '.repeat(progressWidth - line.length) : line
+  progressWidth = line.length
+  process.stderr.write(`\r${padded}`)
 }
 
 function finishProgressLine() {
+  progressWidth = 0
   process.stderr.write('\n')
 }
 
 function clearProgressLine() {
-  process.stderr.write('\r\x1b[K')
+  if (progressWidth > 0) {
+    process.stderr.write(`\r${' '.repeat(progressWidth)}\r`)
+    progressWidth = 0
+    return
+  }
+  process.stderr.write('\r')
 }
 
 function createAbortContext(label) {

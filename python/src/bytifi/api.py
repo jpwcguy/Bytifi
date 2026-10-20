@@ -3,6 +3,7 @@ from __future__ import annotations
 import email.utils
 import json
 import time
+from contextlib import contextmanager
 from typing import Any, Callable
 
 import httpx
@@ -11,6 +12,32 @@ from .url import normalize_base_url
 
 MAX_RETRIES = 3
 UNLIMITED_RATE_LIMIT_RETRIES = 10_000
+_active_client: httpx.Client | None = None
+_cancel_requested = False
+
+
+def request_cancel() -> None:
+    global _cancel_requested
+    _cancel_requested = True
+    if _active_client is not None:
+        _active_client.close()
+
+
+def cancel_requested() -> bool:
+    return _cancel_requested
+
+
+@contextmanager
+def use_http_client():
+    global _active_client
+    client = httpx.Client(timeout=300.0)
+    previous = _active_client
+    _active_client = client
+    try:
+        yield client
+    finally:
+        _active_client = previous
+        client.close()
 
 
 class BytifiApiError(Exception):
@@ -91,18 +118,27 @@ def api_fetch(
     if api_key:
         request_headers["Authorization"] = f"Bearer {api_key}"
 
+    client = _active_client
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(timeout=timeout)
+
     try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.request(
-                method,
-                url,
-                headers=request_headers,
-                content=content,
-                data=data,
-                files=files,
-            )
+        response = client.request(
+            method,
+            url,
+            headers=request_headers,
+            content=content,
+            data=data,
+            files=files,
+        )
     except httpx.HTTPError as error:
+        if _cancel_requested:
+            raise KeyboardInterrupt from error
         raise BytifiNetworkError(str(error) or "Network request failed.", cause=error) from error
+    finally:
+        if owns_client:
+            client.close()
 
     raw = response.content
 
